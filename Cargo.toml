@@ -1,0 +1,11 @@
+[package]
+name = "array-rs"
+version = "0.0.0"
+authors = [ "alexchandel@gmail.com" ]
+
+[[lib]]
+name = "array"
+path = "src/lib.rs"
+
+[[bin]]
+name = "array"
