@@ -1,6 +1,10 @@
 use std::iter::Iterator;
 use std::vec::Vec;
 
+// Array functionality, including the N-dimensional array.
+
+/// A multidimensional array. The last index is the column indexer, and the
+/// second-last is the row indexer.
 /// TODO generic NDArray<T> for ints, floats including f128, and bool
 #[deriving(Show)]
 pub struct Array
@@ -10,18 +14,48 @@ pub struct Array
 	_size: uint			// equals product of _shape and _inner.len()
 }
 
-type NDArray = Array; // TODO This typedef is backwards! Make Array = NDArray<T>!
+// TODO This typedef is backwards! Make Array = NDArray<T>!
+type NDArray = Array;
+
+/// A utility function for the NDArray implementation.
+trait Dot {
+	fn dot(left: Vec<Self>, right: Vec<Self>) -> Self;
+}
+
+impl Dot for f64 {
+	#[inline]
+	fn dot(left: Vec<f64>, right: Vec<f64>) -> f64
+	{
+		left.iter().zip(right.iter()).fold(0f64, |b, (&a1, &a2)| b + a1*a2)
+	}
+}
+
+trait Prod {
+	fn prod(vector: &Vec<Self>) -> Self;
+}
+
+impl Prod for f64
+{
+	#[inline]
+	fn prod(vector: &Vec<f64>) -> f64
+	{
+		vector.iter().fold(1f64, |b, &a| a * b)
+	}
+}
 
 impl Array
 {
+	/*			CONSTRUCTORS			*/
+
+	/// Constructs a 3x3 demo array.
 	pub fn square_demo() -> Array
 	{
 		let p = Array::with_slice(&[0f64,1f64,2f64,3f64,4f64,5f64,6f64,7f64,8f64]);
 		let q = p.reshape(&[3,3]);
-		println!("Reshaped!");
 		q
 	}
 
+	/// Constructs a 0-dimensional array.
 	pub fn empty() -> Array
 	{
 		Array {
@@ -31,6 +65,7 @@ impl Array
 		}
 	}
 
+	/// Constructs a singleton array with 1 element.
 	pub fn with_scalar(scalar: f64) -> Array
 	{
 		Array {
@@ -40,6 +75,7 @@ impl Array
 		}
 	}
 
+	/// Constructs a 1D array with contents of slice.
 	pub fn with_slice(sl: &[f64]) -> Array
 	{
 		let capacity = sl.len();
@@ -50,6 +86,7 @@ impl Array
 		}
 	}
 
+	/// Constructs a 1D array with contents of Vec.
 	pub fn with_vec(vector: Vec<f64>) -> Array
 	{
 		let capacity = vector.len();
@@ -60,6 +97,7 @@ impl Array
 		}
 	}
 
+	/// Constructs an ND array with dimensions of slice
 	pub fn with_shape(shape: &[uint]) -> Array
 	{
 		let capacity = shape.iter().fold(1u, |b, &a| a * b);
@@ -69,6 +107,125 @@ impl Array
 			_size: capacity
 		}
 	}
+
+	pub fn with_vec_shape(vector: Vec<f64>, shape: &[uint]) -> Array
+	{
+		let array = Array::with_vec(vector);
+		array.reshape(shape);
+		array
+	}
+
+	/*			SIZE			*/
+
+	/// Returns a slice containing the array's dimensions.
+	pub fn shape<'a>(&'a self) -> &'a [uint]
+	{
+		self._shape.as_slice()
+	}
+
+	/// Returns the number of dimensions of the array.
+	pub fn ndim(&self) -> uint
+	{
+		self._shape.len()
+	}
+
+	/// Returns the number of elements in the array. This is equal to the
+	/// product of the array's shape
+	pub fn size(&self) -> uint
+	{
+		self._shape.iter().fold(1u, |b, &a| a * b)
+	}
+
+	/*			ELEMENT ACCESS			*/
+
+	/// Gets the n-th element of the array, wrapping over rows/columns/etc.
+	pub fn get_flat(&self, index: uint) -> f64
+	{
+		*self._inner.get(index)
+	}
+
+	/// Gets a scalar element, given a multiindex. Fails if index isn't valid.
+	pub fn get(&self, index: &[uint]) -> f64
+	{
+		assert!(index.len() == self._shape.len())
+
+		let offset: uint = *index.last().unwrap();
+		let ind_it = index.iter().take(index.len()-1);
+		let shp_it = self._shape.iter().skip(1);
+		let ind: uint = ind_it.zip(shp_it).fold(offset,
+			|b, (&a1, &a2)| {/*println!("{0} {1} {2}", b, a1, a2);*/ b + a1*a2});
+		self.get_flat(ind)
+	}
+
+	/// Gets a particular row-vector, column-vector, page-vector, etc.
+	/// The index for the axis dimension is ignored.
+	/// TODO DST
+	pub fn get_vector_axis(&self, index: &[uint], axis: uint) -> Vec<f64>
+	{
+		let mut slice = index.to_owned();
+		let mut it = range(0u, *self._shape.get(axis)).map(|a| {
+			*slice.get_mut(axis) = a;
+			self.get(slice.as_slice())
+		});
+		it.collect()
+	}
+
+	/// Gets a particular row-vector, column-vector, page-vector, etc.
+	/// Specify (-1 as uint) for the desired dimension! Fails otherwise.
+	pub fn get_vector(&self, index: &[uint]) -> Vec<f64>
+	{
+		let axis: uint = *index.iter().find(|&&a| (a == -1i as uint)).unwrap();
+		self.get_vector_axis(index, axis)
+	}
+
+	// TODO sub-array iteration
+
+
+	/*			ELEMENT ASSIGNMENT			*/
+
+	pub fn set(&mut self, index: uint, value: f64)
+	{
+		*self._inner.get_mut(index) = value;
+	}
+
+	// TODO single-element assignment
+	// TODO sub-array assignment
+
+
+	/*			SHAPE OPERATIONS			*/
+
+	/// Returns a new array with shifted boundaries. Fails if sizes differ.
+	/// TODO offer option to pad with zeros?
+	pub fn reshape(&self, shape: &[uint]) -> Array
+	{
+		/* If size == product of new lengths, assign
+		 * else if size is divisible by product, add one dimension, and assign
+		 * else fail.
+		 */
+		let capacity = shape.iter().fold(1u, |b, &a| a * b);
+		assert!(self._size % capacity == 0,
+			"Array::reshape: self.size must be divisible by shape.prod()!")
+		if self._size == capacity
+		{
+			Array {
+				_inner: self._inner.clone(),
+				_shape: shape.to_owned(),
+				_size: self._size
+			}
+		}
+		else /* self._size % capacity == 0 */
+		{
+			let mut full_shape = shape.to_owned();
+			full_shape.push(self._size / capacity);
+			Array {
+				_inner: self._inner.clone(),
+				_shape: full_shape,
+				_size: self._size
+			}
+		}
+	}
+
+	/*			CONTRACTING OPERATIONS			*/
 
 	/// like AdditiveIterator
 	/// Currently sums every element in array
@@ -87,7 +244,7 @@ impl Array
 	/// Currently multiplies every elment in array
 	pub fn prod(&self /*, axis/axes */) -> Array
 	{
-		let prod_f = self._inner.iter().fold(1f64, |b, &a| a * b);
+		let prod_f = Prod::prod(&self._inner);
 		Array {
 			_inner: vec!(prod_f),
 			_shape: vec!(1),
@@ -96,82 +253,96 @@ impl Array
 	}
 
 	/// Dot product
-	/// TODO multiple dimensions
+	/// Sum of last axis (row index) of _a_, and second-last axis
+	/// dot(a, b)[i,j,k,m] = sum(a[i,j,:] * b[k,:,m])
 	pub fn dot(&self, rhs: &Array) -> Array
 	{
-		//println!("{:}", self._inner);
-		let ref v: Vec<f64> = self._inner;
-		let ref vr: Vec<f64> = rhs._inner;
-		let dot_f = v.iter().zip(vr.iter()).fold(0f64, |b, (&a1, &a2)| b + a1*a2);
-		Array {
-			_inner: vec!(dot_f),
-			_shape: vec!(1),
-			_size: 1
-		}
-	}
+		let l_ndim: uint = self.ndim();
+		let r_ndim: uint = rhs.ndim();
+		let v_len: uint = *self._shape.get(l_ndim-1);
+		assert!(v_len == *rhs._shape.get(r_ndim-2),
+			"row length of lhs must equal column length of rhs!");
 
-	pub fn size(&self) -> uint
-	{
-		self._shape.iter().fold(1u, |b, &a| a * b)
-	}
-
-	pub fn shape<'a>(&'a self) -> &'a [uint]
-	{
-		self._shape.as_slice()
-	}
-
-	/// Return an array with new shape. Fail if numbers of elements differ.
-	/// TODO should operate in place?
-	pub fn reshape(&self, shape: &[uint]) -> Array
-	{
-		/* If size == product of new lengths, assign
-		 * else if size is divisible by product, add one dimension, and assign
-		 * else fail.
-		 */
-		let capacity = shape.iter().fold(1u, |b, &a| a * b);
-		assert!(self._size % capacity == 0,
-			"Array::reshape: self.size must be divisible by shape.prod()!")
-		if self._size == capacity
+		if l_ndim == 1
 		{
-			Array {
-				_inner: self._inner.clone(),
-				_shape: shape.to_owned(),
-				_size: self._size
+			if r_ndim == 1
+			{
+				let dot_f = self._inner.iter().zip(rhs._inner.iter()).fold(0f64,
+					|b, (&a1, &a2)| b + a1*a2);
+				Array {
+					_inner: vec!(dot_f),
+					_shape: vec!(1),
+					_size: 1
+				}
+			}
+			else
+			{
+				let mut new_dim: Vec<uint> = rhs.shape().slice(0, r_ndim-2).to_owned();
+				new_dim.push(1); // Only 1 column
+				new_dim.push(*self.shape().get(r_ndim-1).unwrap());
+				let new_size = new_dim.iter().fold(1u, |b, &a| a * b);
+				let mut new_inner = Vec::with_capacity(new_size);
+				new_inner.push(1f64);
+				// Do half of iteration below.
+
+				fail!(":(");
 			}
 		}
 		else
 		{
-			let mut full_shape = shape.to_owned();
-			full_shape.push(self._size / capacity);
+			// All but last 2 dims of both,
+			// 2nd last dim of left,
+			// last dim of right
+			let mut new_dim: Vec<uint> = self.shape().slice(0, l_ndim-1).to_owned();
+			new_dim.push(*self.shape().get(r_ndim-1).unwrap());
+			let new_size = new_dim.iter().fold(1u, |b, &a| a * b);
+			let mut new_inner = Vec::with_capacity(new_size);
+
+			// let iters = new_dim.iter().map(|length| range(0u, length));
+			// TODO IDK how to tensor-multiply the iterators
+			let offsets: Vec<uint> = {
+				let mut _offset = vec!(1u);
+				for d in new_dim.iter().rev().take(new_dim.len()-1)
+				{
+					let _last_offset = *_offset.last().unwrap();
+					_offset.push(d * _last_offset)
+				}
+				_offset.reverse(); // WARNING expensive
+				_offset
+			};
+
+			for i in range(0u, new_size)
+			{
+				let index: Vec<uint> = offsets.iter().map(|&offset| i % offset).collect();
+				let l_axis = l_ndim-1;
+				let r_axis = r_ndim-2;
+				let mut l_index = index.clone();
+				let mut r_index = index.clone();
+
+				// let new_val = vl.zip(vr).fold(0f64, |b, (&l, &r)| b + l*r);
+				let mut new_val: f64 = 0f64;
+				for j in range(0u, v_len)
+				{
+					*l_index.get_mut(l_axis) = j; // row vectors from left
+					*r_index.get_mut(r_axis) = j; // col vectors from right
+					new_val += self.get(l_index.as_slice()) * rhs.get(r_index.as_slice());
+				}
+				new_inner.push(new_val);
+			}
+
 			Array {
-				_inner: self._inner.clone(),
-				_shape: full_shape,
-				_size: self._size
+				_inner: new_inner,
+				_shape: new_dim,
+				_size: new_size
 			}
 		}
 	}
 
-	pub fn get(&self, index: uint) -> f64
-	{
-		*self._inner.get(index)
-	}
+	// TODO serialization and deserialization
 
-	pub fn set(&mut self, index: uint, value: f64)
-	{
-		*self._inner.get_mut(index) = value;
-	}
+	// TODO broadcasting of fn(f64) functions
 
-	/* TODO serialization and deserialization */
-
-	/* TODO single-element assignment */
-
-	/* TODO sub-array assignment */
-
-	/* TODO sub-array iteration */
-
-	/* TODO broadcasting of fn<f64> like functions */
-
-	/* TODO pretty printing of arrays */
+	// TODO pretty printing of arrays
 }
 
 /* TODO subarray indexing */
@@ -183,7 +354,6 @@ impl Array
 // }
 
 /// Broadcast addition over all elements. Fail if shapes differ.
-/// TODO other ops
 impl Add<Array, Array> for Array {
 	fn add(&self, other: &Array) -> Array
 	{
