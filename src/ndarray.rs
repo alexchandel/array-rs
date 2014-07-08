@@ -1,5 +1,10 @@
 use std::iter::Iterator;
 use std::vec::Vec;
+use std::path::Path;
+use std::io::IoResult;
+use std::io::fs::File;
+use std::io::Open;
+use std::io::Write;
 
 // Array functionality, including the N-dimensional array.
 
@@ -118,12 +123,14 @@ impl Array
 	/*			SIZE			*/
 
 	/// Returns a slice containing the array's dimensions.
+	#[inline]
 	pub fn shape<'a>(&'a self) -> &'a [uint]
 	{
 		self._shape.as_slice()
 	}
 
 	/// Returns the number of dimensions of the array.
+	#[inline]
 	pub fn ndim(&self) -> uint
 	{
 		self._shape.len()
@@ -139,6 +146,7 @@ impl Array
 	/*			ELEMENT ACCESS			*/
 
 	/// Gets the n-th element of the array, wrapping over rows/columns/etc.
+	#[inline]
 	pub fn get_flat(&self, index: uint) -> f64
 	{
 		*self._inner.get(index)
@@ -195,6 +203,7 @@ impl Array
 	/*			SHAPE OPERATIONS			*/
 
 	/// Returns a new array with shifted boundaries. Fails if sizes differ.
+	/// ATM, this trivially reflows the the array.
 	/// TODO offer option to pad with zeros?
 	pub fn reshape(&self, shape: &[uint]) -> Array
 	{
@@ -253,20 +262,25 @@ impl Array
 	}
 
 	/// Dot product
-	/// Sum of last axis (row index) of _a_, and second-last axis
-	/// dot(a, b)[i,j,k,m] = sum(a[i,j,:] * b[k,:,m])
+	/// Array dotting essentially treats NDArrays as collections of matrices.
+	/// Dot acts on last axis (row index) of LHS, and second-last axis of RHS
+	/// --> dot(a, b)[i,j,k,m] = sum(a[i,j,:] * b[k,:,m])
+	///
+	/// TODO if arrays aren't identically shaped (except last 2 dims)
 	pub fn dot(&self, rhs: &Array) -> Array
 	{
 		let l_ndim: uint = self.ndim();
 		let r_ndim: uint = rhs.ndim();
-		let v_len: uint = *self._shape.get(l_ndim-1);
-		assert!(v_len == *rhs._shape.get(r_ndim-2),
-			"row length of lhs must equal column length of rhs!");
+		assert!(l_ndim > 0 && r_ndim > 0, "Cannot dot an empty array!");
 
-		if l_ndim == 1
+		let v_len: uint = *self._shape.get(l_ndim-1);
+
+		if l_ndim == 1 && r_ndim == 1
 		{
 			if r_ndim == 1
 			{
+				assert!(v_len == *rhs._shape.get(r_ndim-1),
+					"Lengths of dottend vectors must be the same!");
 				let dot_f = self._inner.iter().zip(rhs._inner.iter()).fold(0f64,
 					|b, (&a1, &a2)| b + a1*a2);
 				Array {
@@ -275,8 +289,11 @@ impl Array
 					_size: 1
 				}
 			}
-			else
+			else /* LHS := row vector, RHS := column vectors or matrix */
 			{
+				assert!(v_len == *rhs._shape.get(r_ndim-2),
+					"Row length of LHS must equal column length of RHS!");
+
 				let mut new_dim: Vec<uint> = rhs.shape().slice(0, r_ndim-2).to_owned();
 				new_dim.push(1); // Only 1 column
 				new_dim.push(*self.shape().get(r_ndim-1).unwrap());
@@ -285,11 +302,20 @@ impl Array
 				new_inner.push(1f64);
 				// Do half of iteration below.
 
-				fail!(":(");
+				fail!(":( This should be incorporated into array broadcasting");
 			}
 		}
-		else
+		else /* LHS := row vectors or matrix */
 		{
+			assert!(r_ndim > 1, "RHS must have column vectors, consider transposing.");
+			assert!(v_len == *rhs._shape.get(r_ndim-2),
+					"Row length of LHS must equal column length of RHS!");
+			assert!(self.shape().as_slice().slice(0, l_ndim-1) ==
+					rhs.shape().as_slice().slice(0, r_ndim-1),
+					"All dimensions of RHS and LHS except last 2 must be equal!");
+			// ^^^^ at the moment, we only support identic
+			// TODO broadcast smaller array onto larger one!
+
 			// All but last 2 dims of both,
 			// 2nd last dim of left,
 			// last dim of right
@@ -299,7 +325,7 @@ impl Array
 			let mut new_inner = Vec::with_capacity(new_size);
 
 			// let iters = new_dim.iter().map(|length| range(0u, length));
-			// TODO IDK how to tensor-multiply the iterators
+			// TODO idiomatic way to tensor-multiply the iterators
 			let offsets: Vec<uint> = {
 				let mut _offset = vec!(1u);
 				for d in new_dim.iter().rev().take(new_dim.len()-1)
@@ -311,14 +337,20 @@ impl Array
 				_offset
 			};
 
+			// if new_dim = [2, 2, 3, 3], two stacks of two pages of 3x3 matrices
+			// then offsets = [2*3*3, 3*3, 3, 1]
+			// dot a multi_index with an offsets to obtain a flat_index
+			// equivalently, flat_index % offset[i] / new_dim[i] == multi_index[i]
+
+			// iterate over elements of new array
 			for i in range(0u, new_size)
 			{
-				let index: Vec<uint> = offsets.iter().map(|&offset| i % offset).collect();
+				let multi_index: Vec<uint> = offsets.iter().zip(new_dim.iter()).map(
+					|(&offset, &dim)| i / offset % dim).collect();
 				let l_axis = l_ndim-1;
 				let r_axis = r_ndim-2;
-				let mut l_index = index.clone();
-				let mut r_index = index.clone();
-
+				let mut l_index = multi_index.clone();
+				let mut r_index = multi_index.clone();
 				// let new_val = vl.zip(vr).fold(0f64, |b, (&l, &r)| b + l*r);
 				let mut new_val: f64 = 0f64;
 				for j in range(0u, v_len)
@@ -338,7 +370,85 @@ impl Array
 		}
 	}
 
-	// TODO serialization and deserialization
+	/// Writes the array into the specified file.
+	/// TODO is this idiomatic?
+	pub fn write_to(&self, path: &str) -> IoResult<()>
+	{
+		match File::open_mode(&Path::new(path), Open, Write)
+		{
+			Ok(mut file) => {
+				match file.write_le_u64(self._shape.len() as u64)
+				{
+					Ok(_) => {
+						for &dim in self._shape.iter()
+						{
+							match file.write_le_u64(dim as u64) {
+								Ok(_) => (),
+								Err(io_err) => return Err(io_err)
+							}
+						}
+						match file.write_le_u64(self._inner.len() as u64)
+						{
+							Ok(_) => {
+								for &element in self._inner.iter()
+								{
+									match file.write_le_f64(element) {
+										Ok(_) => (),
+										Err(io_err) => return Err(io_err)
+									}
+								}
+								file.write_u8(0)
+							},
+							Err(io_err) => Err(io_err)
+						}
+					},
+					Err(io_err) => Err(io_err)
+				}
+			},
+			Err(io_err) => Err(io_err)
+		}
+	}
+
+	/// Writes the array into the specified file.
+	/// TODO is this idiomatic?
+	pub fn read_from(path: &str) -> IoResult<Array>
+	{
+		match File::open(&Path::new(path))
+		{
+			Ok(mut file) => {
+				match file.read_le_u64() {
+					Ok(ndim) => {
+						let mut _shape = Vec::with_capacity(ndim as uint);
+						for _ in range(0u, ndim as uint) {
+							match file.read_le_u64() {
+								Ok(len) => _shape.push(len as uint),
+								Err(io_err) => return Err(io_err)
+							}
+						}
+						match file.read_le_u64() {
+							Ok(_size) => {
+								let mut _inner = Vec::with_capacity(_size as uint);
+								for _ in range(0u, _size as uint) {
+									match file.read_le_f64() {
+										Ok(element) => _inner.push(element),
+										Err(io_err) => return Err(io_err)
+									}
+								}
+								Ok(Array {
+									_inner: _inner,
+									_shape: _shape,
+									_size: _size as uint
+								})
+							},
+							Err(io_err) => return Err(io_err)
+						}
+					},
+					Err(io_err) => return Err(io_err)
+				}
+			},
+			Err(io_err) => return Err(io_err)
+		}
+	}
 
 	// TODO broadcasting of fn(f64) functions
 
