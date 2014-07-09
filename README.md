@@ -1,4 +1,4 @@
-array-rs
+array-rs ![Build Status](https://travis-ci.org/alexchandel/array-rs.png)
 ========
 
 A library that provides a multidimensional array object similar to NumPy's ndarray, along with routines for basic manipulation. array-rs is brand new, currently in the version 0.0.1.
