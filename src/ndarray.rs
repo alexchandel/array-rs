@@ -144,6 +144,15 @@ impl Array
 	}
 
 	/*			ELEMENT ACCESS			*/
+	pub fn index_to_flat(&self, index: &[uint]) -> uint
+	{
+		let offset: uint = *index.last().unwrap();
+		let ind_it = index.iter().take(index.len()-1);
+		let shp_it = self._shape.iter().skip(1);
+		ind_it.zip(shp_it).fold(offset,
+			|b, (&a1, &a2)| b + a1*a2)
+	}
+
 
 	/// Gets the n-th element of the array, wrapping over rows/columns/etc.
 	#[inline]
@@ -156,13 +165,7 @@ impl Array
 	pub fn get(&self, index: &[uint]) -> f64
 	{
 		assert!(index.len() == self._shape.len())
-
-		let offset: uint = *index.last().unwrap();
-		let ind_it = index.iter().take(index.len()-1);
-		let shp_it = self._shape.iter().skip(1);
-		let ind: uint = ind_it.zip(shp_it).fold(offset,
-			|b, (&a1, &a2)| {/*println!("{0} {1} {2}", b, a1, a2);*/ b + a1*a2});
-		self.get_flat(ind)
+		self.get_flat(self.index_to_flat(index))
 	}
 
 	/// Gets a particular row-vector, column-vector, page-vector, etc.
@@ -194,6 +197,13 @@ impl Array
 	pub fn set_flat(&mut self, index: uint, value: f64)
 	{
 		*self._inner.get_mut(index) = value;
+	}
+
+	pub fn set(&mut self, index: &[uint], value: f64)
+	{
+		assert!(index.len() == self._shape.len());
+		let flat = self.index_to_flat(index);
+		self.set_flat(flat, value);
 	}
 
 	// TODO single-element assignment
