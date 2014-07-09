@@ -25,5 +25,8 @@
 # Rust Cargo
 /target/
 
+# Rust docs
+/doc/
+
 # Sublime Text
 *.sublime-*
