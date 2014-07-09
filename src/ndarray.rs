@@ -191,7 +191,7 @@ impl Array
 
 	/*			ELEMENT ASSIGNMENT			*/
 
-	pub fn set(&mut self, index: uint, value: f64)
+	pub fn set_flat(&mut self, index: uint, value: f64)
 	{
 		*self._inner.get_mut(index) = value;
 	}
