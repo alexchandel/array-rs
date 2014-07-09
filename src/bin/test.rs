@@ -1,5 +1,3 @@
-#![crate_id = "test"]
-#![crate_name = "test"]
 #![crate_type = "bin"]
 
 extern crate array;
