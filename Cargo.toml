@@ -8,4 +8,4 @@ name = "array"
 path = "src/lib.rs"
 
 [[bin]]
-name = "test"
+name = "arraytest"
