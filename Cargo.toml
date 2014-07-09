@@ -1,5 +1,5 @@
 [package]
-name = "array-rs"
+name = "array"
 version = "0.0.1"
 authors = [ "alexchandel@gmail.com" ]
 
