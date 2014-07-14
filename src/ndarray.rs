@@ -1,5 +1,8 @@
 use std::iter::Iterator;
+use std::iter::Extendable; // for Array construction
 use std::vec::Vec;
+
+// for serialization:
 use std::path::Path;
 use std::io::IoResult;
 use std::io::fs::File;
@@ -85,11 +88,15 @@ impl Array
 	{
 		let capacity = sl.len();
 		Array {
-			_inner: sl.to_owned(),
+			_inner: sl.to_owned(), // TODO is this correct?
 			_shape: vec!(capacity),
 			_size: capacity
 		}
 	}
+
+	// TODO pub fn with_slice_2(sl: &[[f64]]) -> Array
+	// TODO pub fn with_slice_3(sl: &[[[f64]]]) -> Array
+	// TODO etc
 
 	/// Constructs a 1D array with contents of Vec.
 	pub fn with_vec(vector: Vec<f64>) -> Array
@@ -102,8 +109,16 @@ impl Array
 		}
 	}
 
-	/// Constructs an ND array with dimensions of slice
-	pub fn with_shape(shape: &[uint]) -> Array
+	/// Constructs an array with given vector's contents, and given shape.
+	pub fn with_vec_shape(vector: Vec<f64>, shape: &[uint]) -> Array
+	{
+		let array = Array::with_vec(vector);
+		array.reshape(shape);
+		array
+	}
+
+	/// Internally allocates an ND array with given shape.
+	fn alloc_with_shape(shape: &[uint]) -> Array
 	{
 		let capacity = shape.iter().fold(1u, |b, &a| a * b);
 		Array {
@@ -113,11 +128,31 @@ impl Array
 		}
 	}
 
-	pub fn with_vec_shape(vector: Vec<f64>, shape: &[uint]) -> Array
+	/// Internally allocates an ND array with shape of given array
+	fn alloc_with_shape_of(other: &Array) -> Array
 	{
-		let array = Array::with_vec(vector);
-		array.reshape(shape);
-		array
+		assert!(other._inner.len() == other._size, "Array is inconsistent.");
+		Array {
+			_inner: Vec::with_capacity(other._size),
+			_shape: other._shape.clone(),
+			_size: other._size
+		}
+	}
+
+	/// Constructs an array of zeros, with given shape.
+	pub fn zeros(shape: &[uint]) -> Array
+	{
+		let mut a = Array::alloc_with_shape(shape);
+		a._inner.grow(a._size, &0f64);
+		a
+	}
+
+	/// Constructs an array of ones, with given shape.
+	pub fn ones(shape: &[uint]) -> Array
+	{
+		let mut a = Array::alloc_with_shape(shape);
+		a._inner.grow(a._size, &1f64);
+		a
 	}
 
 	/*			SIZE			*/
@@ -209,6 +244,17 @@ impl Array
 	// TODO single-element assignment
 	// TODO sub-array assignment
 
+
+
+	/*			BROADCASTING OPERATIONS			*/
+	/// Returns array obtained by applying function to every element.
+	pub fn apply(&self, func: fn(f64) -> f64) -> Array
+	{
+		let it = self._inner.iter().map(|&a| func(a));
+		let mut empty_array = Array::alloc_with_shape_of(self);
+		empty_array._inner.extend(it);
+		empty_array
+	}
 
 	/*			SHAPE OPERATIONS			*/
 
@@ -479,12 +525,11 @@ impl Add<Array, Array> for Array {
 	{
 		assert!(self._shape == other._shape, "Array shapes must be equal!");
 		{
-			let mut p = Array::with_shape(self.shape());
+			let mut p = Array::alloc_with_shape(self.shape());
 			let arg_it = self._inner.iter().zip(other._inner.iter());
-			for (dest, (a1, a2)) in p._inner.mut_iter().zip(arg_it)
-			{
-				*dest = *a1 + *a2;
-			}
+			p._inner.extend(arg_it.map(|(&a1, &a2)|
+				a1 + a2
+			));
 			p
 		}
 	}
@@ -495,12 +540,11 @@ impl Sub<Array, Array> for Array {
 	{
 		assert!(self._shape == other._shape, "Array shapes must be equal!");
 		{
-			let mut p = Array::with_shape(self.shape());
+			let mut p = Array::alloc_with_shape(self.shape());
 			let arg_it = self._inner.iter().zip(other._inner.iter());
-			for (dest, (a1, a2)) in p._inner.mut_iter().zip(arg_it)
-			{
-				*dest = *a1 - *a2;
-			}
+			p._inner.extend(arg_it.map(|(&a1, &a2)|
+				a1 - a2
+			));
 			p
 		}
 	}
@@ -511,12 +555,11 @@ impl Mul<Array, Array> for Array {
 	{
 		assert!(self._shape == other._shape, "Array shapes must be equal!");
 		{
-			let mut p = Array::with_shape(self.shape());
+			let mut p = Array::alloc_with_shape(self.shape());
 			let arg_it = self._inner.iter().zip(other._inner.iter());
-			for (dest, (a1, a2)) in p._inner.mut_iter().zip(arg_it)
-			{
-				*dest = *a1 * *a2;
-			}
+			p._inner.extend(arg_it.map(|(&a1, &a2)|
+				a1 * a2
+			));
 			p
 		}
 	}
@@ -527,12 +570,11 @@ impl Div<Array, Array> for Array {
 	{
 		assert!(self._shape == other._shape, "Array shapes must be equal!");
 		{
-			let mut p = Array::with_shape(self.shape());
+			let mut p = Array::alloc_with_shape(self.shape());
 			let arg_it = self._inner.iter().zip(other._inner.iter());
-			for (dest, (a1, a2)) in p._inner.mut_iter().zip(arg_it)
-			{
-				*dest = *a1 / *a2;
-			}
+			p._inner.extend(arg_it.map(|(&a1, &a2)|
+				a1 / a2
+			));
 			p
 		}
 	}
@@ -543,12 +585,11 @@ impl Rem<Array, Array> for Array {
 	{
 		assert!(self._shape == other._shape, "Array shapes must be equal!");
 		{
-			let mut p = Array::with_shape(self.shape());
+			let mut p = Array::alloc_with_shape(self.shape());
 			let arg_it = self._inner.iter().zip(other._inner.iter());
-			for (dest, (a1, a2)) in p._inner.mut_iter().zip(arg_it)
-			{
-				*dest = *a1 + *a2;
-			}
+			p._inner.extend(arg_it.map(|(&a1, &a2)|
+				a1 % a2
+			));
 			p
 		}
 	}
@@ -557,12 +598,11 @@ impl Rem<Array, Array> for Array {
 impl Neg<Array> for Array {
 	fn neg(&self) -> Array
 	{
-		let mut p = Array::with_shape(self.shape());
+		let mut p = Array::alloc_with_shape(self.shape());
 		let arg_it = self._inner.iter();
-		for (dest, a1) in p._inner.mut_iter().zip(arg_it)
-		{
-			*dest = -*a1;
-		}
+		p._inner.extend(arg_it.map(|&a1|
+			-a1
+		));
 		p
 	}
 }
@@ -571,12 +611,11 @@ impl Neg<Array> for Array {
 // impl Not<Array> for Array {
 // 	fn not(&self) -> Array
 // 	{
-// 		let mut p = Array::with_shape(self.shape());
+// 		let mut p = Array::alloc_with_shape(self.shape());
 // 		let arg_it = self._inner.iter();
-// 		for (dest, a1) in p._inner.mut_iter().zip(arg_it)
-// 		{
-// 			*dest = !*a1;
-// 		}
+// 		p._inner.extend(arg_it.map(|&a1|
+// 			!a1
+// 		));
 // 		p
 // 	}
 // }
@@ -586,12 +625,11 @@ impl Neg<Array> for Array {
 // 	{
 // 		assert!(self._shape == other._shape, "Array shapes must be equal!");
 // 		{
-// 			let mut p = Array::with_shape(self.shape());
+// 			let mut p = Array::alloc_with_shape(self.shape());
 // 			let arg_it = self._inner.iter().zip(other._inner.iter());
-// 			for (dest, (a1, a2)) in p._inner.mut_iter().zip(arg_it)
-// 			{
-// 				*dest = *a1 & *a2;
-// 			}
+// 			p._inner.extend(arg_it.map(|(&a1, &a2)|
+// 				a1 & a2
+// 			));
 // 			p
 // 		}
 // 	}
@@ -602,12 +640,11 @@ impl Neg<Array> for Array {
 // 	{
 // 		assert!(self._shape == other._shape, "Array shapes must be equal!");
 // 		{
-// 			let mut p = Array::with_shape(self.shape());
+// 			let mut p = Array::alloc_with_shape(self.shape());
 // 			let arg_it = self._inner.iter().zip(other._inner.iter());
-// 			for (dest, (a1, a2)) in p._inner.mut_iter().zip(arg_it)
-// 			{
-// 				*dest = *a1 | *a2;
-// 			}
+// 			p._inner.extend(arg_it.map(|(&a1, &a2)|
+// 				a1 | a2
+// 			));
 // 			p
 // 		}
 // 	}
@@ -618,12 +655,11 @@ impl Neg<Array> for Array {
 // 	{
 // 		assert!(self._shape == other._shape, "Array shapes must be equal!");
 // 		{
-// 			let mut p = Array::with_shape(self.shape());
+// 			let mut p = Array::alloc_with_shape(self.shape());
 // 			let arg_it = self._inner.iter().zip(other._inner.iter());
-// 			for (dest, (a1, a2)) in p._inner.mut_iter().zip(arg_it)
-// 			{
-// 				*dest = *a1 ^ *a2;
-// 			}
+// 			p._inner.extend(arg_it.map(|(&a1, &a2)|
+// 				a1 ^ a2
+// 			));
 // 			p
 // 		}
 // 	}
@@ -634,12 +670,11 @@ impl Neg<Array> for Array {
 // 	{
 // 		assert!(self._shape == other._shape, "Array shapes must be equal!");
 // 		{
-// 			let mut p = Array::with_shape(self.shape());
+// 			let mut p = Array::alloc_with_shape(self.shape());
 // 			let arg_it = self._inner.iter().zip(other._inner.iter());
-// 			for (dest, (a1, a2)) in p._inner.mut_iter().zip(arg_it)
-// 			{
-// 				*dest = *a1 << (*a2 as uint);
-// 			}
+// 			p._inner.extend(arg_it.map(|(&a1, &a2)|
+// 				a1 << (a2 as uint)
+// 			));
 // 			p
 // 		}
 // 	}
@@ -650,12 +685,11 @@ impl Neg<Array> for Array {
 // 	{
 // 		assert!(self._shape == other._shape, "Array shapes must be equal!");
 // 		{
-// 			let mut p = Array::with_shape(self.shape());
+// 			let mut p = Array::alloc_with_shape(self.shape());
 // 			let arg_it = self._inner.iter().zip(other._inner.iter());
-// 			for (dest, (a1, a2)) in p._inner.mut_iter().zip(arg_it)
-// 			{
-// 				*dest = *a1 >> (*a2 as uint);
-// 			}
+// 			p._inner.extend(arg_it.map(|(&a1, &a2)|
+// 				a1 >> (a2 as uint)
+// 			));
 // 			p
 // 		}
 // 	}
