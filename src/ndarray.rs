@@ -88,7 +88,7 @@ impl Array
 	{
 		let capacity = sl.len();
 		Array {
-			_inner: sl.to_owned(), // TODO is this correct?
+			_inner: sl.to_vec(), // TODO is this correct?
 			_shape: vec!(capacity),
 			_size: capacity
 		}
@@ -123,7 +123,7 @@ impl Array
 		let capacity = shape.iter().fold(1u, |b, &a| a * b);
 		Array {
 			_inner: Vec::with_capacity(capacity),
-			_shape: shape.to_owned(),
+			_shape: shape.to_vec(),
 			_size: capacity
 		}
 	}
@@ -208,7 +208,7 @@ impl Array
 	/// TODO DST
 	pub fn get_vector_axis(&self, index: &[uint], axis: uint) -> Vec<f64>
 	{
-		let mut slice = index.to_owned();
+		let mut slice = index.to_vec();
 		let mut it = range(0u, *self._shape.get(axis)).map(|a| {
 			*slice.get_mut(axis) = a;
 			self.get(slice.as_slice())
@@ -274,13 +274,13 @@ impl Array
 		{
 			Array {
 				_inner: self._inner.clone(),
-				_shape: shape.to_owned(),
+				_shape: shape.to_vec(),
 				_size: self._size
 			}
 		}
 		else /* self._size % capacity == 0 */
 		{
-			let mut full_shape = shape.to_owned();
+			let mut full_shape = shape.to_vec();
 			full_shape.push(self._size / capacity);
 			Array {
 				_inner: self._inner.clone(),
@@ -350,7 +350,7 @@ impl Array
 				assert!(v_len == *rhs._shape.get(r_ndim-2),
 					"Row length of LHS must equal column length of RHS!");
 
-				let mut new_dim: Vec<uint> = rhs.shape().slice(0, r_ndim-2).to_owned();
+				let mut new_dim: Vec<uint> = rhs.shape().slice(0, r_ndim-2).to_vec();
 				new_dim.push(1); // Only 1 column
 				new_dim.push(*self.shape().get(r_ndim-1).unwrap());
 				let new_size = new_dim.iter().fold(1u, |b, &a| a * b);
@@ -375,7 +375,7 @@ impl Array
 			// All but last 2 dims of both,
 			// 2nd last dim of left,
 			// last dim of right
-			let mut new_dim: Vec<uint> = self.shape().slice(0, l_ndim-1).to_owned();
+			let mut new_dim: Vec<uint> = self.shape().slice(0, l_ndim-1).to_vec();
 			new_dim.push(*self.shape().get(r_ndim-1).unwrap());
 			let new_size = new_dim.iter().fold(1u, |b, &a| a * b);
 			let mut new_inner = Vec::with_capacity(new_size);
