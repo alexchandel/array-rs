@@ -11,8 +11,8 @@ use std::io::Write;
 
 // Array functionality, including the N-dimensional array.
 
-/// A multidimensional array. The last index is the column indexer, and the
-/// second-last is the row indexer.
+/// A multidimensional array. The last index is the column index, and the
+/// second-last is the row index.
 /// TODO generic NDArray<T> for ints, floats including f128, and bool
 #[deriving(Show)]
 pub struct Array
