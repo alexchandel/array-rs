@@ -1,6 +1,7 @@
 use std::iter::Iterator;
 use std::iter::Extendable; // for Array construction
 use std::vec::Vec;
+use std::num::{Zero, One};
 
 // for serialization:
 use std::path::Path;
@@ -179,7 +180,7 @@ impl Array
 	}
 
 	/*			ELEMENT ACCESS			*/
-	pub fn index_to_flat(&self, index: &[uint]) -> uint
+	fn index_to_flat(&self, index: &[uint]) -> uint
 	{
 		let offset: uint = *index.last().unwrap();
 		let ind_it = index.iter().take(index.len()-1);
@@ -604,6 +605,22 @@ impl Neg<Array> for Array {
 			-a1
 		));
 		p
+	}
+}
+
+// impl Zero for Array {
+// 	fn zero() -> Array {
+// 		Array::zeros(&[0])
+// 	}
+
+// 	fn is_zero(&self) -> bool {
+
+// 	}
+// }
+
+impl One for Array {
+	fn one() -> Array {
+		Array::ones(&[1])
 	}
 }
 
